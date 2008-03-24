@@ -3,7 +3,7 @@
 Summary:	Nagios plugin to check id.ee ticket validity
 Name:		nagios-plugin-%{plugin}
 Version:	0.9
-Release:	0.2
+Release:	0.3
 License:	GPL
 Group:		Networking
 Source0:	%{plugin}.pl
@@ -12,7 +12,7 @@ BuildRequires:	rpm-perlprov >= 4.1-13
 Requires:	nagios-core
 Requires:	nagios-plugins-libs
 Requires:	perl-IO-Socket-SSL
-Requires:	perl-Nagios-Plugin >= 0.23
+Requires:	perl-Nagios-Plugin >= 0.23-2
 BuildArch:	noarch
 BuildRoot:	%{tmpdir}/%{name}-%{version}-root-%(id -u -n)
 
