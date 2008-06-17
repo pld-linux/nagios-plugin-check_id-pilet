@@ -5,7 +5,7 @@ use HTML::TreeBuilder;
 use Nagios::Plugin;
 
 my $PROGNAME = 'check_id-pilet';
-our $VERSION = '0.9';
+our $VERSION = '0.10';
 
 our $p = Nagios::Plugin->new(
 	usage => "Usage: %s [ -v|--verbose ] [-t <timeout>]
@@ -21,18 +21,26 @@ our $p = Nagios::Plugin->new(
 );
 
 $p->add_arg(
-    spec => 'id|w=i',
-
-    help =>
-qq{-i, --id=STRING
-   Personal ID or Ticket ID},
-
+    spec => 'id|i=s',
+    help => q(-i, --id=STRING),
 	required => 1,
+);
+$p->add_arg(
+	spec => 'critical|c=s',
+	help => q(critical treshold for ticket expire. [smhd] multiplier maybe used.),
+	required => 0,
+	default => 24,
+);
+$p->add_arg(
+	spec => 'warning|w=s',
+	help => q(warning treshold for ticket expire. [smhd] multiplier maybe used.),
+	required => 0,
+	default => 48,
 );
 
 $p->getopts;
 
-my $id = $p->opts->id;
+my $id = uc $p->opts->id;
 my $ua = LWP::UserAgent->new();
 $ua->agent($PROGNAME.'/'. $VERSION);
 my $url = 'https://www.pilet.ee/pages.php/0402010201';
@@ -49,9 +57,72 @@ my $table = $root->look_down('_tag' => 'td', 'id' => 'contentCell');
 my $t = $table->find('p') or $p->nagios_exit(ERROR, "Couldn't parse html");
 $t = $t->as_text;
 
+
+if ($t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/) {
+	my %map = (
+		'Pileti tüüp' => 'type',
+		'Kehtivuse lõppaeg' => 'end',
+		'Ostmise aeg' => 'purchase',
+		'Kehtivuse algusaeg' => 'start',
+	);
+
+	use Time::Local qw(timelocal);
+	sub parse_date {
+		my $str = $_[0];
+
+		# '07.11.2006 23:59:59
+		my ($date, $time) = split(/ /, $str);
+		my @date = (reverse(split /:/, $time), split(/\./, $date));
+		$date[4]--;
+		$date[5] -= 1900;
+		my $ts = timelocal(@date);
+	}
+
+	# gather detailed ticket information
+	my @tickets;
+	for my $t ($table->look_down('_tag' => 'table',  class => 'content')) {
+		my %td = map { $_ = $_->as_text; exists($map{$_}) ? $map{$_} : $_ } $t->find('td');
+		push(@tickets, { type => $td{type}, start => parse_date($td{start}), end => parse_date($td{end}) });
+	}
+
+	sub parse_time {
+		my $str = $_[0];
+		my ($v, $m) = ($str =~ /^(\d+)([smhd])?$/);
+		$v *= 60*60 unless defined $m;
+		$v *= 60 if $m eq 'm';
+		$v *= 60*60 if $m eq 'h';
+		$v *= 60*60*24 if $m eq 'd';
+		$v;
+	}
+
+	my $warn = parse_time($p->opts->warning);
+	my $crit = parse_time($p->opts->critical);
+
+	if ($crit >= $warn) {
+		$p->nagios_exit(ERROR, "critical level has to be smaller than warning level");
+	}
+
+	# find first active ticket
+	my $now = time();
+	for my $t (@tickets) {
+		if ($t->{start} < $now && $t->{end} >= $now) {
+			my $tm = localtime($t->{end});
+			# found ticket, but is it critical/warning level?
+			if ($t->{end} - $now < $crit) {
+				$p->nagios_exit(CRITICAL, "Ticket '$t->{type}' expires on $tm");
+			}
+			if ($t->{end} - $now < $warn) {
+				$p->nagios_exit(WARNING, "Ticket '$t->{type}' expires on $tm");
+			}
+			$p->nagios_exit(OK, "Ticket '$t->{type}' expires on $tm");
+		}
+	}
+	$p->nagios_exit(UNKNOWN, "Unable to parse verbose ticket information");
+}
+
 $p->nagios_exit(OK, "Ticket $id valid") if $t =~ /^Isikul isikukoodiga \Q$id\E on olemas hetkel kehtiv ID-pilet\.$/;
 $p->nagios_exit(ERROR, "Ticket $id not valid") if $t =~ /^Isikul isikukoodiga \Q$id\E ei ole olemas hetkel kehtivat ID-piletit\.$/;
 $p->nagios_exit(WARN, "No active tickets") if $t =~ /^ID-kaardi nr \Q$id\E omanikuga ei ole seotud ühtegi kehtivat ID-piletit\.$/;
-$p->nagios_exit(UNKNOWN, "No specific ticket specified") if $t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/;
+$p->nagios_exit(UNKNOWN, "Need specific ticket ID") if $t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/;
 $p->nagios_exit(ERROR, "Invalid input") if $t =~ /^Vigane ID-kaardi number või isikukood\.$/;
 $p->nagios_exit(UNKNOWN, "Unknown parse status: ".$t);
