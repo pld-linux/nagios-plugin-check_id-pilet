@@ -85,6 +85,8 @@ if ($t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/) 
 		push(@tickets, { type => $td{type}, start => parse_date($td{start}), end => parse_date($td{end}) });
 	}
 
+	$p->nagios_exit(WARN, "No tickets found") unless @tickets;
+
 	sub parse_time {
 		my $str = $_[0];
 		my ($v, $m) = ($str =~ /^(\d+)([smhd])?$/);
@@ -117,7 +119,7 @@ if ($t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/) 
 			$p->nagios_exit(OK, "Ticket '$t->{type}' expires on $tm");
 		}
 	}
-	$p->nagios_exit(UNKNOWN, "Unable to parse verbose ticket information");
+	$p->nagios_exit(CRITICAL, "No active tickets found");
 }
 
 $p->nagios_exit(OK, "Ticket $id valid") if $t =~ /^Isikul isikukoodiga \Q$id\E on olemas hetkel kehtiv ID-pilet\.$/;
