@@ -5,7 +5,7 @@ use HTML::TreeBuilder;
 use Nagios::Plugin;
 
 my $PROGNAME = 'check_id-pilet';
-our $VERSION = '0.10';
+our $VERSION = '0.11';
 
 our $p = Nagios::Plugin->new(
 	usage => "Usage: %s [ -v|--verbose ] [-t <timeout>]
@@ -40,6 +40,7 @@ $p->add_arg(
 
 $p->getopts;
 
+my $verbose = $p->opts->verbose;
 my $id = uc $p->opts->id;
 my $ua = LWP::UserAgent->new();
 $ua->agent($PROGNAME.'/'. $VERSION);
@@ -56,9 +57,10 @@ $root->parse($res->content);
 my $table = $root->look_down('_tag' => 'td', 'id' => 'contentCell');
 my $t = $table->find('p') or $p->nagios_exit(ERROR, "Couldn't parse html");
 $t = $t->as_text;
-
+print "recv:$t\n" if $verbose;
 
 if ($t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/) {
+	print "parse tickets list\n" if $verbose;
 	my %map = (
 		'Pileti tüüp' => 'type',
 		'Kehtivuse lõppaeg' => 'end',
@@ -83,6 +85,7 @@ if ($t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/) 
 	for my $t ($table->look_down('_tag' => 'table',  class => 'content')) {
 		my %td = map { $_ = $_->as_text; exists($map{$_}) ? $map{$_} : $_ } $t->find('td');
 		push(@tickets, { type => $td{type}, start => parse_date($td{start}), end => parse_date($td{end}) });
+		print "add ticket: type: $td{type}; start: $td{start}; end: $td{end}\n" if $verbose;
 	}
 
 	$p->nagios_exit(WARN, "No tickets found") unless @tickets;
@@ -99,6 +102,7 @@ if ($t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/) 
 
 	my $warn = parse_time($p->opts->warning);
 	my $crit = parse_time($p->opts->critical);
+	print "warn: $warn; crit: $crit\n" if $verbose;
 
 	if ($crit >= $warn) {
 		$p->nagios_exit(ERROR, "critical level has to be smaller than warning level");
@@ -107,9 +111,19 @@ if ($t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/) 
 	# find first active ticket
 	my $now = time();
 	for my $t (@tickets) {
+		print "check: $t->{start}; $t->{end}\n" if $verbose;
+		if ($t->{start} > $now) {
+			# ticket in the future, check if it's start period fits to critical range
+			if ($t->{start} - $now < $crit) {
+				print "found ticket from future\n" if $verbose;
+				my $tm = localtime($t->{end});
+				$p->nagios_exit(OK, "Ticket '$t->{type}' expires on $tm");
+			}
+		}
 		if ($t->{start} < $now && $t->{end} >= $now) {
+			print "found active ticket\n" if $verbose;
 			my $tm = localtime($t->{end});
-			# found ticket, but is it critical/warning level?
+			# found active ticket, but is it critical/warning level?
 			if ($t->{end} - $now < $crit) {
 				$p->nagios_exit(CRITICAL, "Ticket '$t->{type}' expires on $tm");
 			}
