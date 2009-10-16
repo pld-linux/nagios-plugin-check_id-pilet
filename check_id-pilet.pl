@@ -6,7 +6,7 @@ use Nagios::Plugin;
 use strict;
 
 my $PROGNAME = 'check_id-pilet';
-our $VERSION = '0.11';
+our $VERSION = '0.12';
 
 our $p = Nagios::Plugin->new(
 	usage => "Usage: %s [ -v|--verbose ] [-t <timeout>]
