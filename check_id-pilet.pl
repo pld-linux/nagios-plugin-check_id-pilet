@@ -3,6 +3,7 @@ use Getopt::Long;
 use LWP;
 use HTML::TreeBuilder;
 use Nagios::Plugin;
+use strict;
 
 my $PROGNAME = 'check_id-pilet';
 our $VERSION = '0.11';
@@ -48,14 +49,14 @@ my $url = 'https://www.pilet.ee/pages.php/0402010201';
 
 my $res = $ua->post($url, { id => $id });
 unless ($res->is_success) {
-	$p->nagios_exit(ERROR, $res->status_line);
+	$p->nagios_exit(CRITICAL, $res->status_line);
 }
 
 my $root = new HTML::TreeBuilder;
 $root->parse($res->content);
 
 my $table = $root->look_down('_tag' => 'td', 'id' => 'contentCell');
-my $t = $table->find('p') or $p->nagios_exit(ERROR, "Couldn't parse html");
+my $t = $table->find('p') or $p->nagios_exit(CRITICAL, "Couldn't parse html");
 $t = $t->as_text;
 print "recv:$t\n" if $verbose;
 
@@ -88,7 +89,7 @@ if ($t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/) 
 		print "add ticket: type: $td{type}; start: $td{start}; end: $td{end}\n" if $verbose;
 	}
 
-	$p->nagios_exit(WARN, "No tickets found") unless @tickets;
+	$p->nagios_exit(WARNING, "No tickets found") unless @tickets;
 
 	sub parse_time {
 		my $str = $_[0];
@@ -105,7 +106,7 @@ if ($t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/) 
 	print "warn: $warn; crit: $crit\n" if $verbose;
 
 	if ($crit >= $warn) {
-		$p->nagios_exit(ERROR, "critical level has to be smaller than warning level");
+		$p->nagios_exit(CRITICAL, "critical level has to be smaller than warning level");
 	}
 
 	# find first active ticket
@@ -137,8 +138,8 @@ if ($t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/) 
 }
 
 $p->nagios_exit(OK, "Ticket $id valid") if $t =~ /^Isikul isikukoodiga \Q$id\E on olemas hetkel kehtiv ID-pilet\.$/;
-$p->nagios_exit(ERROR, "Ticket $id not valid") if $t =~ /^Isikul isikukoodiga \Q$id\E ei ole olemas hetkel kehtivat ID-piletit\.$/;
-$p->nagios_exit(WARN, "No active tickets") if $t =~ /^ID-kaardi nr \Q$id\E omanikuga ei ole seotud ühtegi kehtivat ID-piletit\.$/;
+$p->nagios_exit(CRITICAL, "Ticket $id not valid") if $t =~ /^Isikul isikukoodiga \Q$id\E ei ole olemas hetkel kehtivat ID-piletit\.$/;
+$p->nagios_exit(WARNING, "No active tickets") if $t =~ /^ID-kaardi nr \Q$id\E omanikuga ei ole seotud ühtegi kehtivat ID-piletit\.$/;
 $p->nagios_exit(UNKNOWN, "Need specific ticket ID") if $t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/;
-$p->nagios_exit(ERROR, "Invalid input") if $t =~ /^Vigane ID-kaardi number või isikukood\.$/;
+$p->nagios_exit(CRITICAL, "Invalid input") if $t =~ /^Vigane ID-kaardi number või isikukood\.$/;
 $p->nagios_exit(UNKNOWN, "Unknown parse status: ".$t);
