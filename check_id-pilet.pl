@@ -114,8 +114,8 @@ if ($t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/) 
 	for my $t (@tickets) {
 		print "check: $t->{start}; $t->{end}\n" if $verbose;
 		if ($t->{start} > $now) {
-			# ticket in the future, check if it's start period fits to critical range
-			if ($t->{start} - $now < $crit) {
+			# ticket in the future, check if it's start period fits to warning range
+			if ($t->{start} - $now < $warn) {
 				print "found ticket from future\n" if $verbose;
 				my $tm = localtime($t->{end});
 				$p->nagios_exit(OK, "Ticket '$t->{type}' expires on $tm");
