@@ -2,7 +2,7 @@
 %include	/usr/lib/rpm/macros.perl
 Summary:	Nagios plugin to check id.ee ticket validity
 Name:		nagios-plugin-%{plugin}
-Version:	0.12
+Version:	0.13
 Release:	1
 License:	GPL
 Group:		Networking
