@@ -1,12 +1,11 @@
 #!/usr/bin/perl
-use Getopt::Long;
+use Nagios::Plugin;
 use LWP;
 use HTML::TreeBuilder;
-use Nagios::Plugin;
 use strict;
 
 my $PROGNAME = 'check_id-pilet';
-our $VERSION = '0.12';
+our $VERSION = '0.13';
 
 our $p = Nagios::Plugin->new(
 	usage => "Usage: %s [ -v|--verbose ] [-t <timeout>]
@@ -45,9 +44,9 @@ my $verbose = $p->opts->verbose;
 my $id = uc $p->opts->id;
 my $ua = LWP::UserAgent->new();
 $ua->agent($PROGNAME.'/'. $VERSION);
-my $url = 'https://www.pilet.ee/pages.php/0402010201';
+my $url = 'https://www.pilet.ee/cgi-bin/splususer/splususer.cgi?op=checkbyid';
 
-my $res = $ua->post($url, { id => $id });
+my $res = $ua->post($url, { idcode => $id });
 unless ($res->is_success) {
 	$p->nagios_exit(CRITICAL, $res->status_line);
 }
@@ -55,12 +54,10 @@ unless ($res->is_success) {
 my $root = new HTML::TreeBuilder;
 $root->parse($res->content);
 
-my $table = $root->look_down('_tag' => 'td', 'id' => 'contentCell');
-my $t = $table->find('p') or $p->nagios_exit(CRITICAL, "Couldn't parse html");
-$t = $t->as_text;
-print "recv:$t\n" if $verbose;
+my $div = $root->look_down(_tag => 'div', class => 'col col04 content') or $p->nagios_exit(CRITICAL, "Couldn't parse HTML");
 
-if ($t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/) {
+# we got list of tickets
+if ($div->look_down(_tag => 'li', class => 'future')) {
 	print "parse tickets list\n" if $verbose;
 	my %map = (
 		'Pileti tüüp' => 'type',
@@ -71,10 +68,10 @@ if ($t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/) 
 
 	use Time::Local qw(timelocal);
 	sub parse_date {
-		my $str = $_[0];
-
-		# '07.11.2006 23:59:59
-		my ($date, $time) = split(/ /, $str);
+		# 07.11.2006 23:59:59
+		# 27.03.2009 16:20:59 (aegunud)
+		my ($str) = ($_[0] =~ m/^(.*?)\s*(?:\(aegunud\))?$/);
+		my ($date, $time) = split(/ /, $str, 2);
 		my @date = (reverse(split /:/, $time), split(/\./, $date));
 		$date[4]--;
 		$date[5] -= 1900;
@@ -83,10 +80,30 @@ if ($t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/) 
 
 	# gather detailed ticket information
 	my @tickets;
-	for my $t ($table->look_down('_tag' => 'table',  class => 'content')) {
-		my %td = map { $_ = $_->as_text; exists($map{$_}) ? $map{$_} : $_ } $t->find('td');
-		push(@tickets, { type => $td{type}, start => parse_date($td{start}), end => parse_date($td{end}) });
-		print "add ticket: type: $td{type}; start: $td{start}; end: $td{end}\n" if $verbose;
+	my $table = $div->look_down('_tag' => 'table',  class => 'data');
+	for my $t ($table->find('tr')) {
+		#
+		# <tr class="past">
+		# <td class="bold">Tallinna 1 p&Atilde;&curren;eva kaart</td>
+		# <td class="right">40.00</td>
+		# <td class="sorted">26.03.2009 16:21:00 -<br />27.03.2009 16:20:59 (aegunud)</td>
+		# <td> - </td>
+		# </tr>
+		#
+		my @td = $t->find('td') or next;
+
+		my %td = (
+			type => $td[0]->as_text,
+			price => $td[1]->as_text,
+			period => $td[2]->as_text,
+		);
+
+		# '26.03.2009 16:21:00 -27.03.2009 16:20:59 (aegunud)',
+		my @period = split(/-/, $td{period}, 2);
+
+		my %ticket = (type => $td{type}, start => parse_date($period[0]), end => parse_date($period[1]));
+		print "add ticket: type: $ticket{type}; start: $ticket{start}; end: $ticket{end}\n" if $verbose;
+		push(@tickets, { %ticket });
 	}
 
 	$p->nagios_exit(WARNING, "No tickets found") unless @tickets;
@@ -114,8 +131,8 @@ if ($t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/) 
 	for my $t (@tickets) {
 		print "check: $t->{start}; $t->{end}\n" if $verbose;
 		if ($t->{start} > $now) {
-			# ticket in the future, check if it's start period fits to warning range
-			if ($t->{start} - $now < $warn) {
+			# ticket in the future, check if it's start period fits to critical range
+			if ($t->{start} - $now < $crit) {
 				print "found ticket from future\n" if $verbose;
 				my $tm = localtime($t->{end});
 				$p->nagios_exit(OK, "Ticket '$t->{type}' expires on $tm");
@@ -137,9 +154,13 @@ if ($t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/) 
 	$p->nagios_exit(CRITICAL, "No active tickets found");
 }
 
-$p->nagios_exit(OK, "Ticket $id valid") if $t =~ /^Isikul isikukoodiga \Q$id\E on olemas hetkel kehtiv ID-pilet\.$/;
-$p->nagios_exit(CRITICAL, "Ticket $id not valid") if $t =~ /^Isikul isikukoodiga \Q$id\E ei ole olemas hetkel kehtivat ID-piletit\.$/;
-$p->nagios_exit(WARNING, "No active tickets") if $t =~ /^ID-kaardi nr \Q$id\E omanikuga ei ole seotud ühtegi kehtivat ID-piletit\.$/;
-$p->nagios_exit(UNKNOWN, "Need specific ticket ID") if $t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/;
-$p->nagios_exit(CRITICAL, "Invalid input") if $t =~ /^Vigane ID-kaardi number või isikukood\.$/;
+my $t = $div->look_down(_tag => 'p', class => 'msg-ok') or $p->nagios_exit(CRITICAL, "Couldn't parse html");
+$t = $t->as_text;
+print "recv:$t\n" if $verbose;
+
+$p->nagios_exit(OK, "Ticket $id valid") if $t =~ /^Isikul isikukoodiga \Q$id\E on hetkel kehtiv transpordivahendi ID-pilet\.$/;
+$p->nagios_exit(CRITICAL, "Ticket $id not valid") if $t =~ /^Isikul isikukoodiga \Q$id\E ei ole olemas hetkel kehtivat ID-piletit\.$/; # TODO
+$p->nagios_exit(WARNING, "No active tickets") if $t =~ /^ID-kaardi nr \Q$id\E omanikuga ei ole seotud ühtegi kehtivat ID-piletit\.$/; # TODO
+$p->nagios_exit(UNKNOWN, "Need specific ticket ID") if $t =~ /^ID-kaardi nr \Q$id\E omanikuga on seotud järgmised ID-piletid\.$/; # TODO
+$p->nagios_exit(CRITICAL, "Invalid input") if $t =~ /^Vigane ID-kaardi number või isikukood\.$/; # TODO
 $p->nagios_exit(UNKNOWN, "Unknown parse status: ".$t);
