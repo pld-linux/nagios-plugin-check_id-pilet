@@ -1,8 +1,8 @@
 %define		plugin	check_id-pilet
 %include	/usr/lib/rpm/macros.perl
-Summary:	Nagios plugin to check id.ee ticket validity
+Summary:	Nagios plugin to check pilet.ee ticket validity
 Name:		nagios-plugin-%{plugin}
-Version:	0.13
+Version:	0.2010
 Release:	1
 License:	GPL
 Group:		Networking
@@ -20,7 +20,7 @@ BuildRoot:	%{tmpdir}/%{name}-%{version}-root-%(id -u -n)
 %define		_sysconfdir	/etc/nagios/plugins
 
 %description
-This plugin checks checks for id.ee ticket validity.
+This plugin checks checks for pilet.ee ticket validity.
 
 %prep
 %setup -qTc

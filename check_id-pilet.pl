@@ -5,7 +5,7 @@ use HTML::TreeBuilder;
 use strict;
 
 my $PROGNAME = 'check_id-pilet';
-our $VERSION = '0.13';
+our $VERSION = '0.2010';
 
 our $p = Nagios::Plugin->new(
 	usage => "Usage: %s [ -v|--verbose ] [-t <timeout>]
@@ -13,7 +13,7 @@ our $p = Nagios::Plugin->new(
 	",
 
 	version => $VERSION,
-    blurb => 'This plugin checks for the validity of id.ee tickets.',
+    blurb => 'This plugin checks for the validity of pilet.ee tickets.',
 
 	plugin  => $PROGNAME,
 	shortname => $PROGNAME,
@@ -22,18 +22,18 @@ our $p = Nagios::Plugin->new(
 
 $p->add_arg(
     spec => 'id|i=s',
-    help => q(-i, --id=STRING),
+    help => q(Personal Identifier Number to check (ID-Card numbers no longer supported)),
 	required => 1,
 );
 $p->add_arg(
 	spec => 'critical|c=s',
-	help => q(critical treshold for ticket expire. [smhd] multiplier maybe used.),
+	help => q(Critical treshold for ticket expire. [smhd] multiplier maybe used.),
 	required => 0,
 	default => 24,
 );
 $p->add_arg(
 	spec => 'warning|w=s',
-	help => q(warning treshold for ticket expire. [smhd] multiplier maybe used.),
+	help => q(Warning treshold for ticket expire. [smhd] multiplier maybe used.),
 	required => 0,
 	default => 48,
 );
