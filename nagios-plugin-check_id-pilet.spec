@@ -3,7 +3,7 @@
 Summary:	Nagios plugin to check pilet.ee ticket validity
 Name:		nagios-plugin-%{plugin}
 Version:	0.2010
-Release:	1
+Release:	2
 License:	GPL
 Group:		Networking
 Source0:	%{plugin}.pl
