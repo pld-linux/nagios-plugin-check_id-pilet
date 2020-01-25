@@ -1,5 +1,4 @@
 %define		plugin	check_id-pilet
-%include	/usr/lib/rpm/macros.perl
 Summary:	Nagios plugin to check pilet.ee ticket validity
 Name:		nagios-plugin-%{plugin}
 Version:	0.2010
